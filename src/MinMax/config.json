@@ -1,0 +1,76 @@
+{
+  "tipos_estudio": [
+    {
+      "nombre_estudio": "EstudioCardiologico",
+      "pacientes": [
+        "CardioP1", "CardioP2", "CardioP3", "CardioP4","CardioP5", "CardioP6", "CardioP7", "CardioP8"
+      ],
+      "fases": [
+        "Cardio_Admision",
+        "Cardio_Historia",
+        "Cardio_ECG",
+        "Cardio_Eco",
+        "Cardio_Estres",
+        "Cardio_Informe"
+      ],
+      "orden_fases": {
+        "Cardio_Admision": 1,
+        "Cardio_Historia": 2,
+        "Cardio_ECG": 3,
+        "Cardio_Eco": 4,
+        "Cardio_Estres": 5,
+        "Cardio_Informe": 6
+      }
+    },
+    {
+      "nombre_estudio": "EstudioNeurologico",
+      "pacientes": [
+        "NeuroP1", "NeuroP2", "NeuroP3", "NeuroP4","NeuroP5", "NeuroP6", "NeuroP7", "NeuroP8"
+      ],
+      "fases": [
+        "Neuro_Recepcion",
+        "Neuro_Anamnesis",
+        "Neuro_EEG",
+        "Neuro_Reflejos",
+        "Neuro_Cognitivo"
+      ],
+      "orden_fases": {
+        "Neuro_Recepcion": 1,
+        "Neuro_Anamnesis": 2,
+        "Neuro_EEG": 3,
+        "Neuro_Reflejos": 4,
+        "Neuro_Cognitivo": 5
+      }
+    },
+    {
+      "nombre_estudio": "EstudioDigestivo",
+      "pacientes": [
+        "DigestP1", "DigestP2", "DigestP3", "DigestP4"
+      ],
+      "fases": [
+        "Digest_Registro",
+        "Digest_Endoscopia",
+        "Digest_Biopsia",
+        "Digest_Resultados"
+      ],
+      "orden_fases": {
+        "Digest_Registro": 1,
+        "Digest_Endoscopia": 2,
+        "Digest_Biopsia": 3,
+        "Digest_Resultados": 4
+      }
+    }
+  ],
+  "consultas": [
+    "ConsultaA", "ConsultaB", "ConsultaC", "ConsultaD", 
+    "ConsultaE"
+  ],
+  "hora_inicio": "07:00",
+  "hora_fin": "19:00",
+  "intervalo_consultas_minutos": 30,
+  "medicos": [
+    "MedicoCardio1", "MedicoCardio2", 
+    "MedicoNeuro1", "MedicoNeuro2",
+    "MedicoDigest1"
+  ]
+}

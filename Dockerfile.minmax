@@ -1,0 +1,16 @@
+FROM pypy:3.10
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN mkdir -p /app/plots
+VOLUME /app/plots
+
+COPY src/ ./src/
+
+ENV PYTHONPATH=/app/src
+
+CMD ["pypy3", "-m", "MinMax.main"]
