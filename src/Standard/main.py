@@ -14,7 +14,8 @@ def get_configuration(config_path='/app/src/Standard/config.json'):
         with open(config_path, 'r') as file:
             config = json.load(file)
             # Verificar claves principales
-            expected_keys = ["tipos_estudio", "consultas", "hora_inicio", "hora_fin", "intervalo_consultas_minutos", "medicos"]
+            expected_keys = ["tipos_estudio", "consultas", "hora_inicio", "hora_fin", 
+                             "intervalo_consultas_minutos", "medicos", "num_dias_planificacion"]
             if not all(key in config for key in expected_keys):
                 print(f"Error: Faltan claves en la configuración. Esperadas: {', '.join(expected_keys)}.")
                 return None
@@ -22,6 +23,11 @@ def get_configuration(config_path='/app/src/Standard/config.json'):
             # Validar tipo de intervalo_consultas_minutos
             if not isinstance(config["intervalo_consultas_minutos"], int) or config["intervalo_consultas_minutos"] <= 0:
                 print("Error: 'intervalo_consultas_minutos' debe ser un entero positivo.")
+                return None
+            
+            # Validar num_dias_planificacion
+            if not isinstance(config["num_dias_planificacion"], int) or config["num_dias_planificacion"] <= 0:
+                print("Error: 'num_dias_planificacion' debe ser un entero positivo.")
                 return None
 
             # Validar formato de horas
@@ -77,35 +83,40 @@ if __name__ == "__main__":
         exit(1)
         
     map_paciente_info = construir_mapeo_paciente_info(config_data['tipos_estudio'])
+    num_dias_planificacion = config_data['num_dias_planificacion']
     
-    # Generar horas disponibles
-    horas_disponibles = generar_horas_disponibles(
+    # Generar horas disponibles (para un día tipo)
+    horas_disponibles_un_dia = generar_horas_disponibles(
         config_data['hora_inicio'],
         config_data['hora_fin'],
         config_data['intervalo_consultas_minutos']
     )
 
-    if not horas_disponibles:
-        print("Error: No se pudieron generar las horas disponibles. Revise la configuración de hora_inicio, hora_fin e intervalo.")
+    if not horas_disponibles_un_dia:
+        print("Error: No se pudieron generar las horas disponibles para un día. Revise la configuración de hora_inicio, hora_fin e intervalo.")
         exit(1)
     
-    print(f"Horas disponibles generadas: {horas_disponibles}")
+    print(f"Horas disponibles generadas (por día): {horas_disponibles_un_dia}")
+    print(f"Número de días para planificación: {num_dias_planificacion}")
 
     # Generar componentes del grafo
-    nodos = generar_nodos(config_data, horas_disponibles)
+    nodos = generar_nodos(config_data, horas_disponibles_un_dia, num_dias_planificacion)
     if not nodos:
         print("Error generando nodos. Verifique que haya pacientes, fases, consultas, médicos y horas disponibles.")
         exit(1)
         
-    aristas = generar_aristas(nodos, map_paciente_info,duracion_consulta_minutos=config_data['intervalo_consultas_minutos'], horas_disponibles_str_list=horas_disponibles)
+    aristas = generar_aristas(nodos, map_paciente_info,
+                              duracion_consulta_minutos=config_data['intervalo_consultas_minutos'], 
+                              horas_disponibles_str_list=horas_disponibles_un_dia)
     graph = Graph(nodos, aristas, initial_pheromone=1.0)
     
     # Configurar y ejecutar ACO
     aco = ACO(
         graph=graph,
         config_data=config_data,
-        horas_disponibles=horas_disponibles,
-        n_ants=20, iterations=100, alpha=1.0, beta=4.0, rho=0.05, Q=1000.0
+        horas_disponibles=horas_disponibles_un_dia,
+        num_dias_planificacion=num_dias_planificacion,
+        n_ants=50, iterations=150, alpha=1.0, beta=4.0, rho=0.05, Q=1000.0
     )
     
     print("Ejecutando ACO...")
@@ -130,85 +141,61 @@ if __name__ == "__main__":
             if info_estudio_paciente:
                 print(f"  Estudio: {info_estudio_paciente['nombre_estudio']}")
                 
-                # Ordenar fases según el orden del estudio
+                # Ordenar fases según el orden del estudio y luego por día y hora
                 asignaciones_ordenadas = sorted(
                     asignaciones_paciente, 
-                    key=lambda asign_tuple: info_estudio_paciente['orden_fases'].get(asign_tuple[4], float('inf'))
+                    key=lambda asign_tuple: (
+                        info_estudio_paciente['orden_fases'].get(asign_tuple[5], float('inf')),
+                        asign_tuple[2],
+                        datetime.strptime(asign_tuple[3], "%H:%M").time()
+                    )
                 )
                 
                 for asign_tuple_ordenada in asignaciones_ordenadas:
-                    _, consulta, hora, medico, fase = asign_tuple_ordenada
+                    _, consulta, dia_idx, hora_str, medico, fase = asign_tuple_ordenada
                     orden = info_estudio_paciente['orden_fases'].get(fase, "N/A")
-                    duracion = intervalo_global_min # New way
-                    print(f"  {orden}. {fase} - {hora} ({duracion}min) - {consulta} - {medico}")
+                    duracion = intervalo_global_min 
+                    print(f"  Día {dia_idx+1}, Fase {orden}. {fase} - {hora_str} ({duracion}min) - {consulta} - {medico}")
             else:
-                print(f"  Info de estudio no encontrada")
+                print(f"  Información de estudio no encontrada")
         
         print(f"\nCosto total: {best_cost:.2f}")
         if aco.execution_time is not None:
-            print(f"Tiempo ejecución: {aco.execution_time:.2f}s")
+            print(f"Tiempo de ejecución: {aco.execution_time:.2f}s")
 
         # Generar gráfico de Gantt
         if plot_gantt_chart:
-            print("\nGenerando gráfico de Gantt...")
+            print("\nGenerando gráfico de línea de tiempo combinado para pacientes...")
             try:
-                # Preparar datos para el gráfico
-                fases_duration_para_gantt = {}
+                fases_duration_para_plot = {}
                 all_configured_phase_names = set()
-                
                 for estudio_cfg in config_data['tipos_estudio']:
                     all_configured_phase_names.update(estudio_cfg['fases'])
-
-                # Asignar duración global a todas las fases
                 for phase_name in all_configured_phase_names:
-                    fases_duration_para_gantt[phase_name] = intervalo_global_min
+                    fases_duration_para_plot[phase_name] = config_data['intervalo_consultas_minutos']
                 
-                # Lista completa de pacientes
-                _pacientes_set = set()
-                for estudio_cfg in config_data['tipos_estudio']:
-                    _pacientes_set.update(estudio_cfg['pacientes'])
-                lista_pacientes_completa = list(_pacientes_set)
+                plot_start_hour_config = datetime.strptime(config_data['hora_inicio'], "%H:%M").hour
+                plot_end_hour_config = datetime.strptime(config_data['hora_fin'], "%H:%M").hour
 
-                # Calcular horas de inicio y fin para el gráfico
-                try:
-                    plot_start_hour = datetime.strptime(config_data['hora_inicio'], "%H:%M").hour
-                    
-                    latest_slot_start_str = horas_disponibles[-1]
-                    latest_slot_start_dt_time = datetime.strptime(latest_slot_start_str, "%H:%M").time()
-                    
-                    plot_end_hour = datetime.combine(datetime.today(), latest_slot_start_dt_time) + timedelta(minutes=intervalo_global_min)
-
-                    plot_end_hour_int = plot_end_hour.hour
-                    if plot_end_hour.minute > 0:
-                        plot_end_hour_int += 1
-                    
-                    if plot_end_hour_int > 23:
-                        plot_end_hour_int = 23
-                    
-                    plot_end_hour = plot_end_hour_int
-
-                except (ValueError, TypeError, IndexError) as e:
-                    raise Exception(f"Error calculando horas para Gantt: {e}.")
-
-                gantt_output_dir = "/app/plots/"
-                os.makedirs(gantt_output_dir, exist_ok=True)
-                gantt_filepath = os.path.join(gantt_output_dir, "gantt_plotly_schedule.png")
-
+                plot_output_dir = "/app/plots/" 
+                os.makedirs(plot_output_dir, exist_ok=True)
+                # Definir una única ruta para el gráfico combinado
+                combined_plot_filepath = os.path.join(plot_output_dir, "timeline_todos_pacientes.png")
+                
                 plot_gantt_chart(
                     best_solution=best_solution, 
-                    fases_duration=fases_duration_para_gantt,
-                    pacientes=lista_pacientes_completa, 
-                    medicos=config_data['medicos'], 
-                    consultas=config_data['consultas'],
-                    output_filepath=gantt_filepath,
-                    configured_start_hour=plot_start_hour,
-                    configured_end_hour=plot_end_hour
+                    fases_duration_map=fases_duration_para_plot,
+                    map_paciente_info=map_paciente_info, 
+                    output_filepath=combined_plot_filepath,
+                    num_dias_planificacion=num_dias_planificacion,
+                    configured_start_hour=plot_start_hour_config,
+                    configured_end_hour=plot_end_hour_config 
                 )
             except Exception as e:
-                print(f"Error generando gráfico de Gantt: {e}")
+                print(f"Error generando gráfico de línea de tiempo combinado: {e}")
                 import traceback
                 traceback.print_exc()
     else:
         print("\nNo se encontró solución válida.")
         if aco.execution_time is not None:
-            print(f"Tiempo ejecución: {aco.execution_time:.2f}s")
+            print(f"Tiempo de ejecución: {aco.execution_time:.2f}s")

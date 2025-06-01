@@ -7,52 +7,61 @@ if TYPE_CHECKING:
     from Standard.Graph import Graph
 
 class Ant:
-    def __init__(self, graph: "Graph", paciente_to_estudio_info: Dict[str, Dict], pacientes: List[str],duracion_consultas:int, alpha: float = 1.0, beta: float = 1.0):
+    def __init__(self, graph: "Graph", paciente_to_estudio_info: Dict[str, Dict], 
+                 pacientes: List[str], duracion_consultas: int, 
+                 num_dias_planificacion: int, # Nuevo
+                 alpha: float = 1.0, beta: float = 1.0):
         self.graph = graph
         self.alpha = alpha
         self.beta = beta
-        self.visited: List[Tuple] = []
+        self.visited: List[Tuple] = [] # Tuple: (pac, cons, day, hora_str, med, fase)
         
-        # Info del estudio por paciente
         self.paciente_to_estudio_info = paciente_to_estudio_info
         
         self.pacientes = pacientes 
-        self.pacientes_progreso = defaultdict(dict) # {paciente: {fase: hora}}
+        # Progreso: {paciente: {fase: (dia, hora_str)}}
+        self.pacientes_progreso = defaultdict(lambda: defaultdict(tuple))
+        # Contador de fases por paciente por día: {paciente: {dia: numero_fases}}
+        self.paciente_dia_fase_contador = defaultdict(lambda: defaultdict(int))
+
         self.duracion_consultas = duracion_consultas
-        self.current_node: Tuple = None
+        self.num_dias_planificacion = num_dias_planificacion 
+        self.current_node: Tuple = None # (pac, cons, day, hora_str, med, fase)
         self.total_cost: float = 0.0
         self.valid_solution = False
 
     def choose_next_node(self) -> Tuple:
+        """ Elige el siguiente nodo basado en la heurística y las feromonas."""
         if self.current_node is None:
-            # Elegir nodos iniciales válidos (primera fase del estudio)
             valid_initial_nodes = [
                 node for node in self.graph.nodes
                 if node[0] in self.paciente_to_estudio_info and \
-                   self.paciente_to_estudio_info[node[0]]["orden_fases"].get(node[4]) == 1
+                   self.paciente_to_estudio_info[node[0]]["orden_fases"].get(node[5]) == 1
             ]
             return random.choice(valid_initial_nodes) if valid_initial_nodes else None
         else:
             candidates = self.graph.edges.get(self.current_node, [])
             
-            # Filtrar candidatos válidos
             filtered_candidates = []
             for node in candidates:
                 paciente_candidato = node[0]
-                fase_candidata = node[4]
+                dia_candidato = node[2]
+                fase_candidata = node[5]
 
                 if paciente_candidato not in self.paciente_to_estudio_info:
                     continue 
 
                 info_estudio_candidato = self.paciente_to_estudio_info[paciente_candidato]
                 
-                # Evitar pacientes que ya completaron todas las fases
                 if len(self.pacientes_progreso[paciente_candidato]) >= len(info_estudio_candidato["orden_fases"]):
-                    continue
+                    continue # Paciente ya completó todas sus fases
                 
-                # Evitar programar la misma fase dos veces
                 if fase_candidata in self.pacientes_progreso[paciente_candidato]:
-                    continue
+                    continue # Fase ya programada para este paciente
+                
+                # Maximo 2 fases por paciente por día
+                if self.paciente_dia_fase_contador[paciente_candidato][dia_candidato] >= 2:
+                    continue 
                 
                 filtered_candidates.append(node)
 
@@ -72,82 +81,91 @@ class Ant:
                 probabilities.append(candidate_weight)
                 total_prob_weight += candidate_weight
 
-            # Normalizar y elegir
+            # Normalizar probabilidades y elegir un nodo            
             normalized_probabilities = [p / total_prob_weight for p in probabilities]
             return random.choices(candidate_list, weights=normalized_probabilities, k=1)[0]
 
 
     def calcular_heuristica(self, node_to_evaluate: Tuple) -> float:
-        paciente_eval, consulta_eval, hora_str_eval, medico_eval, fase_eval = node_to_evaluate
+        """
+        Calcula la heurística para un nodo dado, considerando restricciones de tiempo y recursos.
+        """
+        # node_to_evaluate: (paciente, consulta, dia_idx, hora_str, medico, fase)
+        pac_eval, con_eval, day_eval, hora_eval_str, med_eval, fase_eval = node_to_evaluate
         
-        score = 10.0 # Base score
+        score = 10.0 
         
-        if paciente_eval not in self.paciente_to_estudio_info:
-             return 0.1 
+        if pac_eval not in self.paciente_to_estudio_info:
+             return 0.001 
         
-        hora_parts_eval = hora_str_eval.split(':')
-        node_eval_mins = int(hora_parts_eval[0]) * 60 + int(hora_parts_eval[1])
-        
-        # Verificar si el paciente del proximo nodo es el mismo que el del actual
-        if self.current_node:
-            curr_paciente, _, curr_hora_str, _, curr_fase = self.current_node
-            
-            if paciente_eval == curr_paciente: # Si es el mismo paciente
-                current_hora_parts = curr_hora_str.split(':')
-                current_node_mins = int(current_hora_parts[0]) * 60 + int(current_hora_parts[1])
-                current_node_end_mins = current_node_mins + self.duracion_consultas
+        # Máximo 2 fases por paciente por día
+        if self.paciente_dia_fase_contador[pac_eval][day_eval] >= 2:
+            return 0.0001 # Heurística muy baja
 
-                # Penalización si el nodo a evaluar empieza ANTES
-                if node_eval_mins < current_node_end_mins:
-                     score -= 100.0 # Fuerte penalización por solapamiento del mismo paciente.
-                else:
-                    # Si el nodo a evaluar empieza DESPUÉS O AL MISMO TIEMPO que termina el actual.
-                    tiempo_espera_mismo_paciente = node_eval_mins - current_node_end_mins
-                    bonus_menor_tiempo_espera = 100.0 # Ajustable
-                    
-                    # Bonus por empezar la siguiente consulta lo antes posible: de 0 a 120 minutos de espera.
-                    if tiempo_espera_mismo_paciente <= 120: # Hasta 2 horas de espera
-                        # Factor de prontitud: 1.0 para espera 0, 0.0 para espera 120
-                        factor_prontitud = (120.0 - tiempo_espera_mismo_paciente) / 120.0
-                        score += factor_prontitud * bonus_menor_tiempo_espera
+        try:
+            hora_parts_eval = hora_eval_str.split(':')
+            node_eval_mins_of_day = int(hora_parts_eval[0]) * 60 + int(hora_parts_eval[1])
+        except Exception:
+            raise ValueError(f"Cadena de hora mal formada: {hora_eval_str}")
+        if self.current_node:
+            curr_pac, _, curr_day, curr_hora_str, _, curr_fase = self.current_node
+            
+            if pac_eval == curr_pac: # Mismo paciente
+                try:
+                    current_hora_parts = curr_hora_str.split(':')
+                    current_node_mins_of_day = int(current_hora_parts[0]) * 60 + int(current_hora_parts[1])
+                    current_node_end_mins_of_day = current_node_mins_of_day + self.duracion_consultas
+                except ValueError: return 0.001
+
+                if day_eval == curr_day:
+                    if node_eval_mins_of_day < current_node_end_mins_of_day:
+                         score -= 100.0 # Fuerte penalización por solapamiento del mismo paciente en el mismo día
+                    else:
+                        tiempo_espera_mismo_paciente_dia = node_eval_mins_of_day - current_node_end_mins_of_day
+                        bonus_menor_tiempo_espera = 100.0
+                        if tiempo_espera_mismo_paciente_dia <= 120:
+                            factor_prontitud = (120.0 - tiempo_espera_mismo_paciente_dia) / 120.0
+                            score += factor_prontitud * bonus_menor_tiempo_espera
+                elif day_eval < curr_day:
+                    score -= 200.0 # Penalización por ir hacia atrás en días para el mismo paciente
         
-        node_eval_end_mins = node_eval_mins + self.duracion_consultas
+        node_eval_end_mins_of_day = node_eval_mins_of_day + self.duracion_consultas
         
-        medico_count_conflict = 0
-        consulta_count_conflict = 0
-        
-        # Chequear conflictos con nodos ya visitados
+        # Chequear conflictos de recursos (médico/consulta) con nodos ya visitados
         for v_node in self.visited:
-            v_paciente, v_consulta, v_hora_str, v_medico, v_fase = v_node
+            # v_node: (v_pac, v_con, v_day, v_hora_str, v_med, v_fase)
+            v_pac, v_con, v_day, v_hora_str, v_med, v_fase = v_node
             
-            v_hora_parts = v_hora_str.split(':')
-            v_mins = int(v_hora_parts[0]) * 60 + int(v_hora_parts[1])
-            v_end_mins = v_mins + self.duracion_consultas
-            
-            # Comprobar superposición de tiempo entre el nodo a evaluar y un nodo visitado
-            if node_eval_mins < v_end_mins and v_mins < node_eval_end_mins: # Hay solapamiento temporal
-                if v_medico == medico_eval:
-                    score -= 10000.0 
-                    medico_count_conflict +=1
-                if v_consulta == consulta_eval:
-                    score -= 10000.0 
-                    consulta_count_conflict +=1
+            if v_day == day_eval: # Conflicto de recurso solo si es en el mismo día
+                try:
+                    v_hora_parts = v_hora_str.split(':')
+                    v_mins_of_day = int(v_hora_parts[0]) * 60 + int(v_hora_parts[1])
+                    v_end_mins_of_day = v_mins_of_day + self.duracion_consultas
+                except ValueError: continue
+
+                # Comprobar superposición de tiempo
+                time_overlap = (node_eval_mins_of_day < v_end_mins_of_day and 
+                                v_mins_of_day < node_eval_end_mins_of_day)
+
+                if time_overlap:
+                    if v_med == med_eval and v_pac != pac_eval: # Mismo médico, diferente paciente, mismo día y hora
+                        score -= 10000.0 
+                    if v_con == con_eval and v_pac != pac_eval: # Misma consulta, diferente paciente, mismo día y hora
+                        score -= 10000.0
         
-        # Bonus si no hay conflictos
-        if medico_count_conflict == 0: score += 3.0
-        if consulta_count_conflict == 0: score += 3.0
-        
-        return max(0.001, score) # Evitar heurística cero o negativa
+        return max(0.001, score)
 
 
     def move(self, node: Tuple):
+        """ Mueve la hormiga al siguiente nodo, actualizando su estado y progreso."""
         self.current_node = node
         self.visited.append(node)
-        paciente, _, hora, _ , fase = node
-        self.pacientes_progreso[paciente][fase] = hora 
         
-        # Verificar si la solución está completa
-        num_total_fases_programadas = sum(len(fases) for fases in self.pacientes_progreso.values())
+        paciente, _, dia_idx, hora_str, _, fase = node
+        self.pacientes_progreso[paciente][fase] = (dia_idx, hora_str)
+        self.paciente_dia_fase_contador[paciente][dia_idx] += 1
+        
+        num_total_fases_programadas = sum(len(fases_dict) for fases_dict in self.pacientes_progreso.values())
         
         num_total_fases_esperadas = 0
         for p_id in self.pacientes: 
@@ -155,40 +173,6 @@ class Ant:
                  num_total_fases_esperadas += len(self.paciente_to_estudio_info[p_id]["orden_fases"])
 
         if num_total_fases_programadas == num_total_fases_esperadas and num_total_fases_esperadas > 0 :
-            # Solución estructuralmente completa (se han realizado todas las asignaciones requeridas).
             self.valid_solution = True
         else:
             self.valid_solution = False
-
-
-    def _fases_en_orden_correcto(self, paciente: str, fases_paciente_progreso: Dict) -> bool:
-        """
-        Verifica si las fases están completas y en orden correcto
-        """
-        if paciente not in self.paciente_to_estudio_info:
-            return False 
-        
-        info_estudio = self.paciente_to_estudio_info[paciente]
-        orden_fases_definicion = info_estudio["orden_fases"]
-        
-        # Verificar que todas las fases estén programadas
-        if len(fases_paciente_progreso) != len(orden_fases_definicion):
-            return False
-
-        # Verificar orden correcto
-        fases_programadas_con_orden = []
-        for fase_nombre, hora_asignada in fases_paciente_progreso.items():
-            if fase_nombre not in orden_fases_definicion:
-                return False 
-            orden_definido = orden_fases_definicion[fase_nombre]
-            fases_programadas_con_orden.append((orden_definido, hora_asignada, fase_nombre)) 
-        
-        # Ordenar por el orden definido
-        fases_programadas_con_orden.sort(key=lambda x: x[0])
-        
-        # Verificar secuencia (1, 2, 3, ...)
-        for i, (orden, _, _) in enumerate(fases_programadas_con_orden):
-            if orden != i + 1:
-                return False 
-        
-        return True

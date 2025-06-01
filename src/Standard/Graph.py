@@ -12,15 +12,19 @@ class Graph:
         print("Graph initialized with nodes and edges.")
 
     def get_pheromone(self, node1: Tuple, node2: Tuple) -> float:
+        """Obtiene el nivel de feromona entre dos nodos."""
         # Si la arista tiene un valor explícito, se devuelve.
         # De lo contrario, se devuelve el nivel base actual de feromona.
         edge = (node1, node2)
         return self.pheromone.get(edge, self.current_base_pheromone)
 
     def update_pheromone(self, ants: List['Ant'], rho: float, Q: float):
+        """Actualiza las feromonas del grafo en base a las soluciones de la lista de hormigas que recibe como parámetro."""
     # 1. Evaporación global (actualiza current_base_pheromone y las explícitas)
         self.current_base_pheromone *= (1 - rho)
         
+        for edge_key in list(self.pheromone.keys()): # Evaporación de feromonas explícitas
+            self.pheromone[edge_key] *= (1 - rho)
         # 2. Depósito de feromonas
         for ant in ants:
             if not ant.visited or not hasattr(ant, 'total_cost'):

@@ -1,9 +1,9 @@
 {
   "tipos_estudio": [
-    {
+        {
       "nombre_estudio": "EstudioCardiologico",
       "pacientes": [
-        "CardioP1", "CardioP2", "CardioP3", "CardioP4","CardioP5", "CardioP6", "CardioP7", "CardioP8"
+        "CardioP1", "CardioP2", "CardioP3", "CardioP4","CardioP5"
       ],
       "fases": [
         "Cardio_Admision",
@@ -25,7 +25,7 @@
     {
       "nombre_estudio": "EstudioNeurologico",
       "pacientes": [
-        "NeuroP1", "NeuroP2", "NeuroP3", "NeuroP4","NeuroP5", "NeuroP6", "NeuroP7", "NeuroP8"
+        "NeuroP1", "NeuroP2", "NeuroP3", "NeuroP4","NeuroP5"
       ],
       "fases": [
         "Neuro_Recepcion",
@@ -67,7 +67,8 @@
   ],
   "hora_inicio": "07:00",
   "hora_fin": "19:00",
-  "intervalo_consultas_minutos": 30,
+  "intervalo_consultas_minutos": 60,
+  "num_dias_planificacion":5,
   "medicos": [
     "MedicoCardio1", "MedicoCardio2", 
     "MedicoNeuro1", "MedicoNeuro2",
