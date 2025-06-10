@@ -5,13 +5,15 @@ from typing import List, Dict
 import matplotlib.pyplot as plt
 import time
 import os
+from collections import defaultdict
 
 class MinMaxACO(ACO):
     def __init__(self,
-                 graph: MinMaxGraph, # Espera un MinMaxGraph
+                 graph: MinMaxGraph,
                  config_data: Dict,        
                  horas_disponibles: List[str], # Para un día tipo
                  num_dias_planificacion: int,
+                 lista_personal_instancias: List[str] = None,
                  n_ants: int = 10,
                  iterations: int = 100,
                  alpha: float = 1.0,
@@ -19,19 +21,30 @@ class MinMaxACO(ACO):
                  rho: float = 0.1, # Tasa de evaporación y aprendizaje
                  Q: float = 1.0):  # Factor de depósito de feromona
 
-        super().__init__(graph=graph,
-                         config_data=config_data,
-                         horas_disponibles=horas_disponibles,
-                         num_dias_planificacion=num_dias_planificacion,
-                         n_ants=n_ants,
-                         iterations=iterations,
-                         alpha=alpha,
-                         beta=beta,
-                         rho=rho,
-                         Q=Q)
-        
-        self.graph: MinMaxGraph 
+        # Inicialización de atributos igual que en ACO principal
+        super().__init__(
+            graph=graph,
+            config_data=config_data,
+            horas_disponibles=horas_disponibles,
+            num_dias_planificacion=num_dias_planificacion,
+            lista_personal_instancias=lista_personal_instancias,
+            n_ants=n_ants,
+            iterations=iterations,
+            alpha=alpha,
+            beta=beta,
+            rho=rho,
+            Q=Q
+        )
+        self.graph: MinMaxGraph
 
+        # Atributos adicionales para compatibilidad
+        self.max_fases_por_dia_paciente = config_data.get("max_fases_por_dia_paciente", 2)
+        self.fase_a_roles_compatibles = defaultdict(list)
+        self.cargos_config = config_data["cargos"]
+        for rol, fases_asignadas in self.cargos_config.items():
+            for fase in fases_asignadas:
+                self.fase_a_roles_compatibles[fase].append(rol)
+        self.consultas = config_data["consultas"]
 
     def run(self):
         """
@@ -46,7 +59,7 @@ class MinMaxACO(ACO):
             # Crear las hormigas para esta iteración
             ants = [Ant(self.graph, self.paciente_to_estudio, self.pacientes, 
                         self.duracion_consultas, self.num_dias_planificacion, 
-                        self.alpha, self.beta) for _ in range(self.n_ants)]
+                        self.alpha, self.beta, self.max_fases_por_dia_paciente) for _ in range(self.n_ants)]
             
             iteration_best_cost = float('inf')
             iteration_best_solution_path = None 
@@ -54,7 +67,7 @@ class MinMaxACO(ACO):
 
             # Calcular el máximo de pasos permitidos para evitar bucles infinitos
             max_steps = sum(len(self.paciente_to_estudio[p]["orden_fases"]) for p in self.pacientes) * 2 # Usar orden_fases
-            if max_steps == 0: max_steps = 20 * self.num_dias_planificacion # Salvaguarda si no hay fases
+            if max_steps == 0: max_steps = 20 * self.num_dias_planificacion
 
             for ant in ants:
                 # Reiniciar el estado interno de la hormiga
@@ -98,7 +111,7 @@ class MinMaxACO(ACO):
 
                     temp_ls_ant = Ant(self.graph, self.paciente_to_estudio, self.pacientes,
                                         self.duracion_consultas, self.num_dias_planificacion,
-                                        self.alpha, self.beta)
+                                        self.alpha, self.beta, self.max_fases_por_dia_paciente)
                     temp_ls_ant.visited = ls_solution
                     temp_ls_ant.total_cost = ls_cost
                     temp_ls_ant.valid_solution = True 
@@ -136,35 +149,11 @@ class MinMaxACO(ACO):
         return self.best_solution, self.best_cost
 
     def plot_convergence(self):
-        if not self.total_costs or all(c == float('inf') for c in self.total_costs):
-            print("No hay datos válidos para la gráfica de convergencia (MinMaxACO).")
-            return
-
-        plot_costs = [c for c in self.total_costs if c != float('inf')]
-        if not plot_costs and self.total_costs:
-            if self.best_cost != float('inf'):
-                plot_costs = [self.best_cost] * len(self.total_costs)
-            else:
-                print("Todos los costos registrados son infinitos (MinMaxACO). No se puede graficar.")
-                return
-        if not plot_costs:
-            print("No hay costos finitos para graficar (MinMaxACO).")
-            return
-
+        if not self.total_costs: print("No hay datos para graficar convergencia."); return
         plt.figure(figsize=(10, 6))
-        plt.plot(plot_costs, marker='o', linestyle='-')
-        plt.xlabel('Iteración')
-        plt.ylabel('Mejor Costo Encontrado')
-        plt.title('Convergencia del Algoritmo Min-Max ACO')
-        plt.grid(True)
-        
-        plot_dir = "/app/plots"
-        os.makedirs(plot_dir, exist_ok=True)
-        
-        try:
-            filepath = os.path.join(plot_dir, "convergencia_MinMaxACO.png")
-            plt.savefig(filepath)
-            print(f"Gráfica de convergencia (MinMaxACO) guardada en {filepath}")
-        except Exception as e:
-            print(f"Error al guardar gráfica de convergencia (MinMaxACO): {e}")
-        plt.close()
+        plt.plot(self.total_costs, marker='o', linestyle='-')
+        plt.xlabel('Iteración'); plt.ylabel('Mejor Costo Encontrado'); plt.title('Convergencia del Algoritmo ACO'); plt.grid(True)
+        plot_dir = "/app/plots"; os.makedirs(plot_dir, exist_ok=True)
+        try: plt.savefig(os.path.join(plot_dir, "convergencia_minmax_aco.png")); print(f"Gráfico guardado en {os.path.join(plot_dir, 'convergencia_minmax_aco.png')}")
+        except Exception as e: print(f"Error guardando gráfico: {e}")
+        plt.close() # Cerrar la figura para liberar memoria

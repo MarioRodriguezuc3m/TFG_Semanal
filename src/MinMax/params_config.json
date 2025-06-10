@@ -1,0 +1,9 @@
+{
+    "n_ants": 75,
+    "iterations": 100,
+    "alpha": 1.0,
+    "beta": 4.0,
+    "rho": 0.02,
+    "Q": 1000.0,
+    "pheromone_max":10.0,
+    "pheromone_min": 0.1}

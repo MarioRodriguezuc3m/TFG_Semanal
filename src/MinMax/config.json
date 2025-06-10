@@ -1,77 +1,82 @@
 {
   "tipos_estudio": [
-        {
+    {
       "nombre_estudio": "EstudioCardiologico",
       "pacientes": [
-        "CardioP1", "CardioP2", "CardioP3", "CardioP4","CardioP5"
+        "P1", "P2", "P3", "P4", "P5"
       ],
       "fases": [
-        "Cardio_Admision",
-        "Cardio_Historia",
-        "Cardio_ECG",
-        "Cardio_Eco",
-        "Cardio_Estres",
-        "Cardio_Informe"
+        "Admision",
+        "Historia",
+        "Prueba_Medica",
+        "Laboratorio",
+        "Entrega_Resultados",
+        "Cierre"
       ],
       "orden_fases": {
-        "Cardio_Admision": 1,
-        "Cardio_Historia": 2,
-        "Cardio_ECG": 3,
-        "Cardio_Eco": 4,
-        "Cardio_Estres": 5,
-        "Cardio_Informe": 6
+        "Admision": 1,
+        "Historia": 2,
+        "Prueba_Medica": 3,
+        "Laboratorio": 4,
+        "Entrega_Resultados": 5,
+        "Cierre": 6
       }
     },
     {
       "nombre_estudio": "EstudioNeurologico",
       "pacientes": [
-        "NeuroP1", "NeuroP2", "NeuroP3", "NeuroP4","NeuroP5"
+        "P1", "P2", "P3", "P4", "P5"
       ],
       "fases": [
-        "Neuro_Recepcion",
-        "Neuro_Anamnesis",
-        "Neuro_EEG",
-        "Neuro_Reflejos",
-        "Neuro_Cognitivo"
+        "Admision",
+        "Historia",
+        "Prueba_Medica",
+        "Laboratorio",
+        "Entrega_Resultados"
       ],
       "orden_fases": {
-        "Neuro_Recepcion": 1,
-        "Neuro_Anamnesis": 2,
-        "Neuro_EEG": 3,
-        "Neuro_Reflejos": 4,
-        "Neuro_Cognitivo": 5
+        "Admision": 1,
+        "Historia": 2,
+        "Prueba_Medica": 3,
+        "Laboratorio": 4,
+        "Entrega_Resultados": 5
       }
-    },
-    {
+    },{
       "nombre_estudio": "EstudioDigestivo",
       "pacientes": [
-        "DigestP1", "DigestP2", "DigestP3", "DigestP4"
+        "P1", "P2", "P3", "P4"
       ],
       "fases": [
-        "Digest_Registro",
-        "Digest_Endoscopia",
-        "Digest_Biopsia",
-        "Digest_Resultados"
+        "Admision",
+        "Historia",
+        "Prueba_Medica",
+        "Entrega_Resultados"
       ],
       "orden_fases": {
-        "Digest_Registro": 1,
-        "Digest_Endoscopia": 2,
-        "Digest_Biopsia": 3,
-        "Digest_Resultados": 4
+        "Admision": 1,
+        "Historia": 2,
+        "Prueba_Medica": 3,
+        "Entrega_Resultados": 4
       }
     }
   ],
   "consultas": [
-    "ConsultaA", "ConsultaB", "ConsultaC", "ConsultaD", 
-    "ConsultaE"
+    "ConsultaA", "ConsultaB", "ConsultaC", "ConsultaD", "ConsultaE"
   ],
   "hora_inicio": "07:00",
   "hora_fin": "19:00",
-  "intervalo_consultas_minutos": 60,
   "num_dias_planificacion":5,
-  "medicos": [
-    "MedicoCardio1", "MedicoCardio2", 
-    "MedicoNeuro1", "MedicoNeuro2",
-    "MedicoDigest1"
-  ]
+  "intervalo_consultas_minutos": 60,
+  "max_fases_por_dia_paciente": 3,
+  "roles": ["MG", "LB", "AC"],
+  "personal": {
+    "MG": 2,
+    "LB": 2,
+    "AC": 2
+  },
+  "cargos": {
+    "AC": ["Admision", "Cierre"],
+    "MG": ["Historia", "Prueba_Medica"],
+    "LB": ["Laboratorio", "Entrega_Resultados"]
+  }
 }

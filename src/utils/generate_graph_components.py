@@ -27,17 +27,17 @@ def construir_mapeo_paciente_info(tipos_estudio_data: List[Dict]) -> Dict:
 def generar_nodos(config_data: Dict[str, Any], 
                   horas_disponibles_un_dia: List[str],
                   num_dias_planificacion: int,
-                  max_fases_por_dia_paciente: int = 2 # Nueva constante
+                  lista_personal_instancias: List[str],
+                  max_fases_por_dia_paciente: int = 2
                   ) -> List[Tuple]:
     """
-    Genera nodos posibles del grafo para múltiples días, optimizado para viabilidad temporal
-    considerando el máximo de fases por día por paciente.
-    Cada nodo: (paciente, consulta, dia_idx, hora_str, médico, fase_nombre)
+    Genera nodos posibles del grafo para múltiples días, considerando roles y personal.
+    Nodo: (paciente, consulta, dia_idx, hora_str, personal_instancia, fase_nombre)
     """
     nodos = []
     consultas = config_data["consultas"]
-    medicos = config_data["medicos"]
-    
+    cargos_fases_config = config_data["cargos"]
+
     num_slots_por_dia = len(horas_disponibles_un_dia)
 
     for estudio_config_info in config_data["tipos_estudio"]:
@@ -70,9 +70,7 @@ def generar_nodos(config_data: Dict[str, Any],
                         if es_primera_fase_del_paciente:
                             dias_restantes_reales = num_dias_planificacion - dia_idx
                             if dias_restantes_reales < min_dias_necesarios_por_limite_fases:
-                                # No hay suficientes días en el calendario para completar el estudio
-                                # respetando la restricción de fases por día
-                                break
+                                break # No hay suficientes días para completar el estudio
 
                         for h_idx, h_str in enumerate(horas_disponibles_un_dia):
                             if es_primera_fase_del_paciente:
@@ -84,22 +82,30 @@ def generar_nodos(config_data: Dict[str, Any],
                                 total_fases_alojables_globalmente = fases_posibles_en_slots_dia_actual + fases_posibles_en_slots_dias_futuros
                                 
                                 if total_fases_alojables_globalmente < num_fases_para_este_estudio:
-                                    break # Rompe el bucle de horas (h_idx, h_str)
+                                    break # No hay suficientes slots/días restantes para el estudio desde esta hora
 
-                            for m in medicos:
-                                nodos.append((p, c, dia_idx, h_str, m, f_nombre))
+                            for personal_instancia in lista_personal_instancias:
+                                rol_actual = personal_instancia.split('_')[0]
 
-    print(f"Generados {len(nodos)} nodos a lo largo de {num_dias_planificacion} días.")
+                                # Verificar si el rol actual puede realizar la fase actual
+                                if rol_actual not in cargos_fases_config or \
+                                   f_nombre not in cargos_fases_config[rol_actual]:
+                                    continue # No puede hacer esta fase
+
+                                # Si el personal puede realizar la fase, se crea el nodo
+                                nodos.append((p, c, dia_idx, h_str, personal_instancia, f_nombre))
+
+    print(f"Generados {len(nodos)} nodos a lo largo de {num_dias_planificacion} días con roles.")
     return nodos
 
-def generar_aristas(nodos: List[Tuple], 
-                    paciente_info: Dict[str, Dict[str, Any]], 
-                    duracion_consulta_minutos: int, 
+def generar_aristas(nodos: List[Tuple],
+                    paciente_info: Dict[str, Dict[str, Any]],
+                    duracion_consulta_minutos: int,
                     horas_disponibles_str_list: List[str]
                    ) -> Dict[Tuple, List[Tuple]]:
     """
-    Genera las aristas del grafo considerando días.
-    Nodo: (paciente, consulta, dia_idx, hora_str, medico, fase)
+    Genera las aristas del grafo considerando días, horas y roles de personal.
+    Nodo: (paciente, consulta, dia_idx, hora_str, personal_instancia, fase_nombre)
     """
     aristas = defaultdict(list)
     num_nodos = len(nodos)
@@ -124,8 +130,9 @@ def generar_aristas(nodos: List[Tuple],
         processed_nodes_count += 1
         if processed_nodes_count % (max(1, num_nodos // 20)) == 0 or processed_nodes_count == num_nodos : 
              print(f"  Aristas: Procesando nodo Origen {processed_nodes_count}/{num_nodos} ({(processed_nodes_count/num_nodos*100):.1f}%) - Aristas encontradas: {sum(len(v) for v in aristas.values())}")
-        
-        p1, c1, day1, h1_str, m1, f1 = nodo1
+
+        # p1, c1, day1, h1_str, personal1, f1
+        p1, c1, day1, h1_str, personal1, f1 = nodo1
         info_p1 = paciente_info.get(p1)
         if not info_p1: continue 
 
@@ -144,16 +151,16 @@ def generar_aristas(nodos: List[Tuple],
             if nodo1 == nodo2:
                 continue
 
-            p2, c2, day2, h2_str, m2, f2 = nodo2
-            
+            p2, c2, day2, h2_str, personal2, f2 = nodo2
+
             h2_min_del_dia = horas_min_del_dia_cache.get(h2_str)
             if h2_min_del_dia is None: continue
 
             # Restricción de recursos GENERAL para diferentes pacientes en la misma hora de inicio
             if p1 != p2 and day1 == day2 and h1_str == h2_str: # Mismo día y hora
-                if m1 == m2 or c1 == c2: # Mismo médico o misma consulta
+                if personal1 == personal2 or c1 == c2: # Misma instancia de personal o misma consulta
                     continue
-            
+
             info_p2 = paciente_info.get(p2)
             if not info_p2: continue
 
@@ -173,9 +180,9 @@ def generar_aristas(nodos: List[Tuple],
                     if day2 == day1:
                         if h2_min_del_dia >= h1_fin_min_del_dia:
                             aristas[nodo1].append(nodo2)
-                    elif day2 > day1:
+                    elif day2 > day1: # Fase 2 en día posterior
                         aristas[nodo1].append(nodo2)
-            
+
             # Caso 2: Diferentes pacientes (p1 != p2)
             else: # p1 != p2
                 es_ultima_fase_p1 = (orden_f1 == max_orden_p1)

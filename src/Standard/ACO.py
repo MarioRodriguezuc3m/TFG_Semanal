@@ -15,7 +15,8 @@ except ImportError:
 
 class ACO:
     def __init__(self, graph: Graph, config_data: Dict, horas_disponibles: List[str], # Horas para un día tipo
-                 num_dias_planificacion: int, # Nuevo: número de días para planificar
+                 num_dias_planificacion: int,
+                 lista_personal_instancias: List[str],
                  n_ants: int = 10, iterations: int = 100,
                  alpha: float = 1.0, beta: float = 3.0, rho: float = 0.1, Q: float = 1.0):
         self.graph = graph
@@ -23,12 +24,23 @@ class ACO:
         
         self.tipos_estudio = config_data["tipos_estudio"]
         self.consultas = config_data["consultas"]
-        self.horas_un_dia = horas_disponibles # Renombrado para claridad
+        self.horas_un_dia = horas_disponibles
         self.num_dias_planificacion = num_dias_planificacion
         self.duracion_consultas = config_data.get("intervalo_consultas_minutos")
-        self.medicos = config_data["medicos"]
-        
-        self.paciente_to_estudio = {} 
+
+        # Atributos relacionados con roles y personal
+        self.roles_config = config_data["roles"]
+        self.personal_cantidad_config = config_data["personal"]
+        self.cargos_config = config_data["cargos"]
+        self.lista_personal_instancias = lista_personal_instancias
+
+        # Mapeo de fase a roles que pueden realizarla
+        self.fase_a_roles_compatibles = defaultdict(list)
+        for rol, fases_asignadas in self.cargos_config.items():
+            for fase in fases_asignadas:
+                self.fase_a_roles_compatibles[fase].append(rol)
+
+        self.paciente_to_estudio = {}
         _unique_pacientes_set = set()
 
         for estudio in self.tipos_estudio:
@@ -51,6 +63,7 @@ class ACO:
         self.total_costs = [] 
         self.best_cost = float('inf')
         self.execution_time = None
+        self.max_fases_por_dia_paciente = config_data.get("max_fases_por_dia_paciente", 2)
 
     def run(self):
         """" Ejecuta el algoritmo ACO para encontrar la mejor solución de planificación """
@@ -58,30 +71,28 @@ class ACO:
         
         for iteration in range(self.iterations):
             ants = [Ant(self.graph, self.paciente_to_estudio, self.pacientes, self.duracion_consultas,
-                        self.num_dias_planificacion, self.alpha, self.beta) for _ in range(self.n_ants)]
+                        self.num_dias_planificacion, self.alpha, self.beta, self.max_fases_por_dia_paciente) for _ in range(self.n_ants)]
             
             iteration_best_cost = float('inf')
             iteration_best_solution = None
 
             for ant_idx, ant in enumerate(ants):
-                # Límite de pasos para evitar bucles infinitos
-                max_steps = sum(len(self.paciente_to_estudio[p]["fases"]) for p in self.pacientes) * 2 
-                
+                max_steps = sum(len(self.paciente_to_estudio[p]["fases"]) for p in self.pacientes) * 2
                 steps = 0
-                # Reiniciar estado interno de la hormiga para este nuevo intento de solución
+                # Reiniciar estado interno de la hormiga
                 ant.visited = []
                 ant.pacientes_progreso.clear()
                 ant.paciente_dia_fase_contador.clear()
                 ant.current_node = None
                 ant.valid_solution = False
-
+                
                 while steps < max_steps and not ant.valid_solution:
                     next_node = ant.choose_next_node()
                     if next_node is None:
-                        break 
+                        break
                     ant.move(next_node)
                     steps += 1
-                
+
                 if ant.valid_solution:
                     cost = self.calcular_coste(ant.visited)
                     ant.total_cost = cost # Almacenar el coste total en la hormiga
@@ -118,7 +129,7 @@ class ACO:
                 if self.best_solution is not None:
                     # Solo la mejor hormiga de la iteración actualiza
                     temp_ant_for_pheromone = Ant(self.graph, self.paciente_to_estudio, self.pacientes, self.duracion_consultas,
-                                                self.num_dias_planificacion, self.alpha, self.beta)
+                                                self.num_dias_planificacion, self.alpha, self.beta, self.max_fases_por_dia_paciente)
                     temp_ant_for_pheromone.visited = iteration_best_solution # Mejor de la iteración
                     temp_ant_for_pheromone.total_cost = iteration_best_cost
                     self.graph.update_pheromone([temp_ant_for_pheromone], self.rho, self.Q)
@@ -138,48 +149,32 @@ class ACO:
 
         end_time = time.time()
         self.execution_time = end_time - start_time
-        
+
         return self.best_solution, self.best_cost
 
     def calcular_coste(self, asignaciones: List[Tuple]) -> float:
         """" Calcula el coste total de una solución de asignaciones """
-        # Asignacion: (paciente, consulta, dia_idx, hora_str, medico, fase_nombre)
+        # Asignacion: (paciente, consulta, dia_idx, hora_str, personal, fase_nombre)
         if not asignaciones:
             return float('inf')
 
         fases_activas_detalle = []
-        # {paciente: [(orden, dia_idx, inicio_min_abs, fin_min_abs, fase_nombre, inicio_min_dia), ...]}
         tiempos_pacientes = defaultdict(list)
         hora_str_to_min_cache = {} 
         coste_total = 0.0
-        
-        max_min_per_day = 24 * 60 # Para calcular minutos absolutos
+        max_min_per_day = 24 * 60
 
-        # Contador para la restricción de 2 fases por paciente por día
         fases_por_paciente_dia = defaultdict(lambda: defaultdict(int))
 
         # PASO 1: Validar cada asignación individual y pre-procesar
         for asignacion_idx, asignacion in enumerate(asignaciones):
-            if len(asignacion) != 6: # Comprobación básica de la estructura nueva del tuple
-                coste_total += 70000 # Penalización por estructura incorrecta
-                continue
-            paciente, consulta, dia_idx, hora_str, medico, fase_nombre = asignacion
-            
-            # Verificar que el paciente existe en la configuración
-            if paciente not in self.paciente_to_estudio:
-                coste_total += 50000 # Penalización grave por paciente inexistente
-                continue 
-            
-            estudio_info_paciente = self.paciente_to_estudio[paciente] # Obtener info del estudio para ESTE paciente
-            
-            # Verificar que la fase pertenece al estudio del paciente
-            if fase_nombre not in estudio_info_paciente["fases"]:
-                coste_total += 40000 # Penalización por fase incorrecta
-                continue
+            paciente, consulta, dia_idx, hora_str, personal_instancia, fase_nombre = asignacion
+            estudio_info_paciente = self.paciente_to_estudio[paciente]
 
-            # Verificar que el dia_idx es válido
-            if not (0 <= dia_idx < self.num_dias_planificacion):
-                coste_total += 45000 # Día inválido
+            # Validar que el personal asignado puede realizar la fase
+            rol_asignado = personal_instancia.split('_')[0]
+            if rol_asignado not in self.cargos_config or fase_nombre not in self.cargos_config[rol_asignado]:
+                coste_total += 75000 # Penalización por personal incorrecto para la fase
                 continue
 
             # Contar fases por paciente y día
@@ -196,7 +191,7 @@ class ACO:
                     continue
             else:
                 inicio_min_dia = hora_str_to_min_cache[hora_str]
-                
+
             fin_min_dia = inicio_min_dia + self.duracion_consultas
             inicio_min_abs = dia_idx * max_min_per_day + inicio_min_dia
             fin_min_abs = dia_idx * max_min_per_day + fin_min_dia
@@ -208,7 +203,7 @@ class ACO:
 
             # Guardar detalles de la fase para análisis posteriores
             fases_activas_detalle.append({
-                'paciente': paciente, 'consulta': consulta, 'medico': medico, 'fase': fase_nombre,
+                'paciente': paciente, 'consulta': consulta, 'personal': personal_instancia, 'fase': fase_nombre,
                 'dia_idx': dia_idx, 'hora_str': hora_str,
                 'inicio_min_dia': inicio_min_dia, 'fin_min_dia': fin_min_dia, # Minutos dentro del día
                 'inicio_min_abs': inicio_min_abs, 'fin_min_abs': fin_min_abs, # Minutos absolutos en la planificación
@@ -220,39 +215,32 @@ class ACO:
         if coste_total > 0:
             return coste_total
 
-        # PASO 1.5: Penalizar violación de "2 fases por paciente por día"
+        # PASO 1.5: Penalizar violación de "max_fases_por_dia_paciente" fases por paciente por día
         for pac, dias_data in fases_por_paciente_dia.items():
             for dia, count in dias_data.items():
-                if count > 2:
-                    coste_total += 30000 * (count - 2) # Penalización fuerte
+                if count > self.max_fases_por_dia_paciente:
+                    coste_total += 30000 * (count - self.max_fases_por_dia_paciente) # Penalización fuerte
 
         # PASO 2: Detectar conflictos de recursos (médicos, consultas) usando algoritmo de barrido sobre tiempo absoluto
         eventos = []
         # Crear eventos de inicio y fin para cada fase
         for i, f_activa in enumerate(fases_activas_detalle):
             # Eventos usan tiempo absoluto para que el barrido funcione entre días
-            eventos.append((f_activa['inicio_min_abs'], 'start', i, f_activa['medico'], f_activa['consulta']))
-            eventos.append((f_activa['fin_min_abs'], 'end', i, f_activa['medico'], f_activa['consulta']))
+            eventos.append((f_activa['inicio_min_abs'], 'start', i, f_activa['personal'], f_activa['consulta']))
+            eventos.append((f_activa['fin_min_abs'], 'end', i, f_activa['personal'], f_activa['consulta']))
         
         eventos.sort() # Ordenar por tiempo
 
-        medicos_ocupados = defaultdict(int) # Contador de fases activas por médico
         consultas_ocupadas = defaultdict(int) # Contador de fases activas por consulta
-
-        # Procesar eventos cronológicamente
-        for t_abs, tipo_evento, idx_fase, medico_evento, consulta_evento in eventos:
+        personal_ocupado = defaultdict(int) # Contador de fases activas por personal
+        for t_abs, tipo_evento, idx_fase, personal_evento, consulta_evento in eventos:
             if tipo_evento == 'start':
-                # Al iniciar una fase, verificar si hay conflicto
-                if medicos_ocupados[medico_evento] > 0:
-                    coste_total += 20000 # Médico ya ocupado
-                medicos_ocupados[medico_evento] += 1
-                
-                if consultas_ocupadas[consulta_evento] > 0:
-                    coste_total += 20000 # Consulta ya ocupada
-                consultas_ocupadas[consulta_evento] += 1
-            else:  # 'end'
-                # Al terminar una fase, liberar recursos
-                medicos_ocupados[medico_evento] -= 1
+                if personal_ocupado[personal_evento] > 0: coste_total += 20000
+                personal_ocupado[personal_evento] += 1 # Personal ocupado
+                if consultas_ocupadas[consulta_evento] > 0: coste_total += 20000
+                consultas_ocupadas[consulta_evento] += 1 # Consulta ocupada
+            else:
+                personal_ocupado[personal_evento] -= 1
                 consultas_ocupadas[consulta_evento] -= 1
 
         # PASO 3: Verificar secuencia y tiempos por paciente
@@ -304,7 +292,7 @@ class ACO:
         
     def _identificar_asignaciones_conflictivas(self, solution: List[Tuple]) -> List[int]:
         """" Identifica los índices de asignaciones conflictivas en una solución """
-        # Asignacion: (paciente, consulta, dia_idx, hora_str, medico, fase_nombre)
+        # Asignacion: (paciente, consulta, dia_idx, hora_str, personal_instancia, fase_nombre)
         conflictive_indices = set()
         if not solution or len(solution) < 2:
             return []
@@ -314,23 +302,22 @@ class ACO:
 
         processed_assignments = []
         for i, asignacion in enumerate(solution):
-            if len(asignacion) != 6: continue # Comprobación de seguridad
-            paciente, consulta, dia_idx, hora_str, medico, fase = asignacion
+            if len(asignacion) != 6: continue
+            paciente, consulta, dia_idx, hora_str, personal_instancia, fase = asignacion
 
             if hora_str not in hora_str_to_min_cache:
                 try:
                     hora_obj = datetime.datetime.strptime(hora_str, "%H:%M").time()
                     inicio_min_dia = hora_obj.hour * 60 + hora_obj.minute
                     hora_str_to_min_cache[hora_str] = inicio_min_dia
-                except ValueError:
-                    continue # Ignorar asignación con hora inválida
+                except ValueError: continue
             else:
                 inicio_min_dia = hora_str_to_min_cache[hora_str]
 
             fin_min_dia = inicio_min_dia + duracion_consulta_min
             processed_assignments.append({
                 'idx': i, 'paciente': paciente, 'consulta': consulta, 'dia_idx': dia_idx,
-                'medico': medico, 'fase': fase, 'hora_str': hora_str, # Guardar hora_str por si acaso
+                'personal': personal_instancia, 'fase': fase,
                 'inicio_min_dia': inicio_min_dia, 'fin_min_dia': fin_min_dia,
                 'original_tuple': asignacion
             })
@@ -348,66 +335,67 @@ class ACO:
                                asig2['inicio_min_dia'] < asig1['fin_min_dia'])
 
                     if overlap:
-                        # Conflicto de médico (diferentes pacientes, mismo médico, mismo día y hora)
-                        if asig1['medico'] == asig2['medico'] and asig1['paciente'] != asig2['paciente']:
-                            conflictive_indices.add(asig1['idx'])
-                            conflictive_indices.add(asig2['idx'])
-
-                        # Conflicto de consulta (diferentes pacientes, misma consulta, mismo día y hora)
-                        if asig1['consulta'] == asig2['consulta'] and asig1['paciente'] != asig2['paciente']:
-                            conflictive_indices.add(asig1['idx'])
-                            conflictive_indices.add(asig2['idx'])
+                        # Conflicto de personal (diferentes pacientes, mismo personal, mismo día y hora)
+                        if asig1['personal'] == asig2['personal'] :
+                            conflictive_indices.add(asig1['idx']); conflictive_indices.add(asig2['idx'])
+                        if asig1['consulta'] == asig2['consulta']:
+                            conflictive_indices.add(asig1['idx']); conflictive_indices.add(asig2['idx'])
         return list(conflictive_indices)
 
 
     def local_search(self, solution: List[Tuple]) -> List[Tuple]:
         """" Realiza una búsqueda local para intentar mejorar la solución dada """
-        # Asignacion: (paciente, consulta, dia_idx, hora_str, medico, fase_nombre)
-        current_best_solution = list(solution) # Trabajar con una copia
+        # Asignacion: (paciente, consulta, dia_idx, hora_str, personal, fase_nombre)
+        current_best_solution = list(solution) # Copia de la solución actual
         current_best_cost = self.calcular_coste(current_best_solution)
 
-        if not current_best_solution or current_best_cost == 0.1: # 0.1 es "perfecto"
+        if not current_best_solution or current_best_cost == 0.1: # Si la solución es vacía o ya es óptima
             return current_best_solution
 
         num_improvement_attempts = 15 # Limitar intentos
 
         for attempt in range(num_improvement_attempts):
-            if not current_best_solution: break # Salir si la solución se vuelve vacía (poco probable)
+            if not current_best_solution: break # Evitar error si la solución está vacía
             
-            temp_solution = list(current_best_solution) # Copia para modificar en esta iteración de LS
+            temp_solution = list(current_best_solution) # Copia temporal de la solución actual
             conflictive_indices = self._identificar_asignaciones_conflictivas(temp_solution)
             
             idx_to_change = -1
             if conflictive_indices and random.random() < 0.9: # 90% de probabilidad de elegir un conflicto
                 idx_to_change = random.choice(conflictive_indices)
-            else: # Sino, o por probabilidad, elegir una aleatoria
+            else:
                 if not temp_solution: continue # Evitar error si temp_solution está vacía
                 idx_to_change = random.randrange(len(temp_solution))
 
-            if idx_to_change == -1 or idx_to_change >= len(temp_solution): # Salvaguarda
+            if idx_to_change == -1 or idx_to_change >= len(temp_solution):
                 continue
 
             original_assignment = temp_solution[idx_to_change]
-            # Desempaquetar los 6 elementos
-            paciente, consulta, dia_idx, hora_str, medico, fase = original_assignment
+            paciente, consulta, dia_idx, hora_str, personal_actual_instancia, fase = original_assignment
 
             change_options = []
-            # Opción: Cambiar hora (dentro del mismo día)
+            # Cambiar hora
             available_new_horas = [h for h in self.horas_un_dia if h != hora_str]
             if available_new_horas:
                 change_options.append(("hora", random.choice(available_new_horas)))
             
-            # Opción: Cambiar médico
-            available_new_medicos = [m for m in self.medicos if m != medico]
-            if available_new_medicos:
-                change_options.append(("medico", random.choice(available_new_medicos)))
+            # Cambiar personal_instancia
+            roles_compatibles_con_fase = self.fase_a_roles_compatibles.get(fase, [])
+            available_new_personal_instancias = []
+            if roles_compatibles_con_fase:
+                for p_inst in self.lista_personal_instancias:
+                    p_rol = p_inst.split('_')[0]
+                    if p_rol in roles_compatibles_con_fase and p_inst != personal_actual_instancia:
+                        available_new_personal_instancias.append(p_inst)
+            if available_new_personal_instancias:
+                change_options.append(("personal", random.choice(available_new_personal_instancias)))
 
-            # Opción: Cambiar consulta
+            # Cambiar consulta
             available_new_consultas = [c for c in self.consultas if c != consulta]
             if available_new_consultas:
                 change_options.append(("consulta", random.choice(available_new_consultas)))
             
-            # Opción: Cambiar día
+            # Cambiar día
             available_new_dias = [d_idx for d_idx in range(self.num_dias_planificacion) if d_idx != dia_idx]
             if available_new_dias:
                 change_options.append(("dia", random.choice(available_new_dias)))
@@ -418,49 +406,26 @@ class ACO:
             change_type, new_value = random.choice(change_options)
             
             new_asig = None
-            if change_type == "hora":
-                new_asig = (paciente, consulta, dia_idx, new_value, medico, fase)
-            elif change_type == "medico":
-                new_asig = (paciente, consulta, dia_idx, hora_str, new_value, fase)
-            elif change_type == "consulta":
-                new_asig = (paciente, new_value, dia_idx, hora_str, medico, fase)
-            elif change_type == "dia": # new_value es el nuevo dia_idx
-                new_asig = (paciente, consulta, new_value, hora_str, medico, fase) 
+            if change_type == "hora": new_asig = (paciente, consulta, dia_idx, new_value, personal_actual_instancia, fase)
+            elif change_type == "personal": new_asig = (paciente, consulta, dia_idx, hora_str, new_value, fase)
+            elif change_type == "consulta": new_asig = (paciente, new_value, dia_idx, hora_str, personal_actual_instancia, fase)
+            elif change_type == "dia": new_asig = (paciente, consulta, new_value, hora_str, personal_actual_instancia, fase)
             
             if new_asig:
-                modified_solution_attempt = list(temp_solution) # Crear una nueva lista para el intento
+                modified_solution_attempt = list(temp_solution)
                 modified_solution_attempt[idx_to_change] = new_asig
                 new_cost = self.calcular_coste(modified_solution_attempt)
-                
                 if new_cost < current_best_cost:
                     current_best_cost = new_cost
-                    current_best_solution = modified_solution_attempt # Actualizar la mejor solución de la búsqueda local
-
+                    current_best_solution = modified_solution_attempt
         return current_best_solution
 
     def plot_convergence(self):
-        """" Genera y guarda el gráfico de convergencia del algoritmo ACO """
-        if not self.total_costs:
-            print("No hay datos para graficar convergencia.")
-            return
-
+        if not self.total_costs: print("No hay datos para graficar convergencia."); return
         plt.figure(figsize=(10, 6))
         plt.plot(self.total_costs, marker='o', linestyle='-')
-        plt.xlabel('Iteración')
-        plt.ylabel('Mejor Costo Encontrado')
-        plt.title('Convergencia del Algoritmo ACO')
-        plt.grid(True)
-        
-        plot_dir = "/app/plots" # Directorio de salida para los gráficos
-        os.makedirs(plot_dir, exist_ok=True) # Asegura que el directorio exista
-        
-        try:
-            plt.savefig(os.path.join(plot_dir, "convergencia_aco.png"))
-            print(f"Gráfico guardado en {os.path.join(plot_dir, 'convergencia_aco.png')}")
-        except Exception as e:
-            print(f"Error guardando gráfico: {e}")
+        plt.xlabel('Iteración'); plt.ylabel('Mejor Costo Encontrado'); plt.title('Convergencia del Algoritmo ACO'); plt.grid(True)
+        plot_dir = "/app/plots"; os.makedirs(plot_dir, exist_ok=True)
+        try: plt.savefig(os.path.join(plot_dir, "convergencia_aco.png")); print(f"Gráfico guardado en {os.path.join(plot_dir, 'convergencia_aco.png')}")
+        except Exception as e: print(f"Error guardando gráfico: {e}")
         plt.close() # Cerrar la figura para liberar memoria
-
-    def get_execution_time(self):
-        """" Devuelve el tiempo de ejecución del algoritmo """
-        return self.execution_time

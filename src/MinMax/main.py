@@ -9,53 +9,85 @@ from collections import defaultdict
 from datetime import datetime, timedelta, time # time es necesario para datetime.strptime(...).time()
 from typing import List
 
-def get_configuration(config_path='/app/src/MinMax/config.json'): # Ruta al config de MinMax
+def get_configuration(config_path='/app/src/MinMax/config.json'):
     try:
         with open(config_path, 'r') as file:
             config = json.load(file)
-            # Verificar claves principales, incluyendo num_dias_planificacion
-            expected_keys = ["tipos_estudio", "consultas", "hora_inicio", "hora_fin", 
-                             "intervalo_consultas_minutos", "medicos", "num_dias_planificacion"]
+            expected_keys = ["tipos_estudio", "consultas", "hora_inicio", "hora_fin",
+                             "intervalo_consultas_minutos", "num_dias_planificacion",
+                             "roles", "personal", "cargos"]
             if not all(key in config for key in expected_keys):
-                missing_keys = [key for key in expected_keys if key not in config]
-                print(f"Error: Faltan claves en la configuración ({config_path}): {', '.join(missing_keys)}. Esperadas: {', '.join(expected_keys)}.")
+                print(f"Error: Faltan claves en la configuración. Esperadas: {', '.join(expected_keys)}.")
                 return None
 
             # Validar tipo de intervalo_consultas_minutos
             if not isinstance(config["intervalo_consultas_minutos"], int) or config["intervalo_consultas_minutos"] <= 0:
-                print("Error: 'intervalo_consultas_minutos' debe ser un entero positivo.")
-                return None
-            
-            # Validar num_dias_planificacion
+                print("Error: 'intervalo_consultas_minutos' debe ser un entero positivo."); return None
             if not isinstance(config["num_dias_planificacion"], int) or config["num_dias_planificacion"] <= 0:
-                print("Error: 'num_dias_planificacion' debe ser un entero positivo.")
-                return None
-
-            # Validar formato de horas
+                print("Error: 'num_dias_planificacion' debe ser un entero positivo."); return None
             try:
                 datetime.strptime(config["hora_inicio"], "%H:%M")
                 datetime.strptime(config["hora_fin"], "%H:%M")
             except ValueError:
-                print("Error: 'hora_inicio' o 'hora_fin' tienen formato incorrecto. Usar HH:MM.")
-                return None
-            
-            # Verificar estructura de estudios
+                print("Error: 'hora_inicio' o 'hora_fin' tienen formato incorrecto. Usar HH:MM."); return None
+
             for estudio in config["tipos_estudio"]:
                 if not all(k in estudio for k in ["nombre_estudio", "pacientes", "fases", "orden_fases"]):
-                    print(f"Error: Estructura incorrecta en estudio {estudio.get('nombre_estudio', 'DESCONOCIDO')}. Se esperan: nombre_estudio, pacientes, fases, orden_fases.")
+                    print(f"Error en estudio {estudio.get('nombre_estudio', 'N/A')}. Faltan claves."); return None
+            
+            # Validaciones de roles, personal, cargos
+            if not isinstance(config.get("roles"), list) or not all(isinstance(r, str) for r in config["roles"]):
+                print("Error: 'roles' debe ser una lista de strings."); return None
+            if not isinstance(config.get("personal"), dict):
+                print("Error: 'personal' debe ser un diccionario."); return None
+            for rol, cantidad in config["personal"].items():
+                if rol not in config["roles"]:
+                    print(f"Error: Rol '{rol}' en 'personal' no definido en 'roles'."); return None
+                if not isinstance(cantidad, int) or cantidad <= 0:
+                    print(f"Error: Cantidad para rol '{rol}' debe ser entero positivo."); return None
+            if not isinstance(config.get("cargos"), dict):
+                print("Error: 'cargos' debe ser un diccionario."); return None
+            
+            all_defined_phases_in_studies = set()
+            for estudio_cfg in config["tipos_estudio"]:
+                all_defined_phases_in_studies.update(estudio_cfg["fases"])
+
+            for rol, fases_asignadas in config["cargos"].items():
+                if rol not in config["roles"]:
+                    print(f"Error: Rol '{rol}' en 'cargos' no definido en 'roles'."); return None
+                if not isinstance(fases_asignadas, list) or not all(isinstance(f, str) for f in fases_asignadas):
+                    print(f"Error: Fases para rol '{rol}' deben ser lista de strings."); return None
+            
+            phases_covered_by_roles = set()
+            for rol in config["cargos"]:
+                phases_covered_by_roles.update(config["cargos"][rol])
+            
+            for phase_study in all_defined_phases_in_studies:
+                if phase_study not in phases_covered_by_roles:
+                    print(f"Error crítico: Fase '{phase_study}' no cubierta por ningún rol en 'cargos'.")
                     return None
-                if "fases_duration" in estudio: # Mantener advertencia si aún es relevante
-                    print(f"Advertencia: 'fases_duration' en estudio {estudio.get('nombre_estudio', 'DESCONOCIDO')} ya no se utiliza. Se usará el 'intervalo_consultas_minutos' global.")
             return config
-    except FileNotFoundError:
-        print(f"Error: No se encontró el archivo de configuración en {config_path}")
-        return None
-    except json.JSONDecodeError:
-        print(f"Error: El archivo de configuración {config_path} no es un JSON válido.")
-        return None
     except Exception as e:
-        print(f"Error inesperado al cargar configuración desde {config_path}: {e}")
+        print(f"Error inesperado al cargar configuración: {e}")
         return None
+
+def get_aco_params(params_path='aco_params.json'):
+    """
+    Carga los parámetros del algoritmo ACO desde un archivo JSON y verifica que las claves sean correctas.
+    """
+    expected_keys = {"n_ants", "iterations", "alpha", "beta", "rho", "Q","pheromone_max", "pheromone_min"}
+    try:
+        with open(params_path, 'r') as file:
+            params = json.load(file)
+        # Se verifican las claves
+        params_keys = set(params.keys())
+        if params_keys != expected_keys:
+            raise Exception(f"Advertencia: Las claves del archivo de parámetros no son correctas.\n"
+                  f"Esperadas: {sorted(expected_keys)}\n"
+                  f"Encontradas: {sorted(params_keys)}\n")
+        return params
+    except Exception as e:
+        raise Exception(f"Error cargando parámetros de ACO: {e}")
 
 def generar_horas_disponibles(hora_inicio_str: str, hora_fin_str: str, intervalo_minutos: int) -> List[str]:
     """Genera una lista de strings de tiempo ("HH:MM") para un día tipo."""
@@ -81,15 +113,33 @@ def generar_horas_disponibles(hora_inicio_str: str, hora_fin_str: str, intervalo
 
 if __name__ == "__main__":
     # Especificar la ruta al config.json de MinMax
-    config_file_path_minmax = '/app/src/MinMax/config.json' 
+    config_file_path_minmax = '/app/src/MinMax/config.json'
+    aco_params_path = '/app/src/MinMax/params_config.json'
+    config_file_path = '/app/src/MinMax/config.json'
     config_data = get_configuration(config_file_path_minmax)
+    aco_params = get_aco_params(aco_params_path)
 
     if config_data is None:
         print("No se pudo cargar la configuración para MinMax.")
         exit(1)
 
+    # Definir nombre paciente 
+    for i in range(len(config_data['tipos_estudio'])):
+        estudio_config = config_data['tipos_estudio'][i]
+        nombre_estudio = estudio_config.get("nombre_estudio", f"EstudioDesconocido_{i}")
+        
+        # Transformar nombres de pacientes
+        if "pacientes" in estudio_config and isinstance(estudio_config["pacientes"], list):
+            transformed_pacientes_list = []
+            for p_generic in estudio_config["pacientes"]:
+                transformed_name = f"{nombre_estudio}_{p_generic}"
+                transformed_pacientes_list.append(transformed_name)
+            
+            config_data['tipos_estudio'][i]["pacientes"] = transformed_pacientes_list
+
     map_paciente_info = construir_mapeo_paciente_info(config_data['tipos_estudio'])
     num_dias_planificacion = config_data['num_dias_planificacion'] # Cargar desde el config
+    max_fases_por_dia_paciente = config_data.get('max_fases_por_dia_paciente', 2)
 
     horas_disponibles_un_dia = generar_horas_disponibles(
         config_data['hora_inicio'],
@@ -104,38 +154,44 @@ if __name__ == "__main__":
     print(f"Horas disponibles generadas (por día tipo): {horas_disponibles_un_dia}")
     print(f"Número de días para planificación: {num_dias_planificacion}")
 
-    # Generar componentes del grafo, pasando num_dias_planificacion
-    # Asumiendo que generar_nodos y generar_aristas están en utils y adaptados
-    nodos = generar_nodos(config_data, horas_disponibles_un_dia, num_dias_planificacion)
+    # Generar instancias de personal
+    lista_personal_instancias = []
+    for rol, cantidad in config_data["personal"].items():
+        for i in range(1, cantidad + 1):
+            lista_personal_instancias.append(f"{rol}_{i}")
+    print(f"Instancias de personal generadas: {lista_personal_instancias}")
+
+    # Generar componentes del grafo
+    nodos = generar_nodos(config_data, horas_disponibles_un_dia, num_dias_planificacion,lista_personal_instancias,max_fases_por_dia_paciente)
     if not nodos:
         print("Error generando nodos. Verifique la configuración y las funciones de generación.")
         exit(1)
         
     aristas = generar_aristas(nodos, map_paciente_info,
-                              duracion_consulta_minutos=config_data['intervalo_consultas_minutos'], 
-                              horas_disponibles_str_list=horas_disponibles_un_dia)
+                        duracion_consulta_minutos=config_data['intervalo_consultas_minutos'],
+                        horas_disponibles_str_list=horas_disponibles_un_dia)
     
-    # Instanciar MinMaxGraph
+    # Usar MinMaxGraph
     min_max_graph = MinMaxGraph(
         nodes=nodos,
         edges=aristas,
-        pheromone_max=10.0,  # Ajusta estos valores según necesites
-        pheromone_min=0.1,
-        # initial_pheromone (opcional):, por defecto será pheromone_max
+        pheromone_max=aco_params["pheromone_max"],  # Valor máximo de feromonas (tau_max)
+        pheromone_min=aco_params["pheromone_min"],   # Valor mínimo de feromonas (tau_min)
     )
     
-    # Instanciar y configurar MinMaxACO
+    # Configurar y ejecutar ACO
     aco_minmax = MinMaxACO(
-        graph=min_max_graph, # Pasar la instancia de MinMaxGraph
+        graph=min_max_graph,
         config_data=config_data,
-        horas_disponibles=horas_disponibles_un_dia, # Horas de un día tipo
-        num_dias_planificacion=num_dias_planificacion, # Pasar el número de días
-        n_ants=20,          # Ajusta parámetros de ACO
-        iterations=100, 
-        alpha=1.0, 
-        beta=3.0, 
-        rho=0.05, # Tasa de evaporación más común para MinMax
-        Q=100.0   # Ajusta Q
+        horas_disponibles=horas_disponibles_un_dia,
+        num_dias_planificacion=num_dias_planificacion,
+        lista_personal_instancias=lista_personal_instancias,
+        n_ants=aco_params["n_ants"],
+        iterations=aco_params["iterations"],
+        alpha=aco_params["alpha"],
+        beta=aco_params["beta"],
+        rho=aco_params["rho"],
+        Q=aco_params["Q"]
     )
     
     print("Ejecutando MinMaxACO...")
@@ -199,7 +255,7 @@ if __name__ == "__main__":
 
                 plot_output_dir = "/app/plots/"
                 os.makedirs(plot_output_dir, exist_ok=True)
-                combined_plot_filepath = os.path.join(plot_output_dir, "timeline_todos_pacientes_MinMaxACO.png")
+                combined_plot_filepath = os.path.join(plot_output_dir, "schedule_MinMax_ACO.png")
                 
                 plot_gantt_chart(
                     best_solution=best_solution, 
