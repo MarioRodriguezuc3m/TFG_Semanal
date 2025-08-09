@@ -420,12 +420,27 @@ class ACO:
                     current_best_solution = modified_solution_attempt
         return current_best_solution
 
-    def plot_convergence(self):
-        if not self.total_costs: print("No hay datos para graficar convergencia."); return
+    def plot_convergence(self, output_dir: str = "/app/plots"):
+        """
+        Genera y guarda un gráfico de la convergencia del algoritmo ACO.
+        """
+        if not self.total_costs:
+            print("No hay datos para graficar convergencia.")
+            return
+
         plt.figure(figsize=(10, 6))
         plt.plot(self.total_costs, marker='o', linestyle='-')
-        plt.xlabel('Iteración'); plt.ylabel('Mejor Costo Encontrado'); plt.title('Convergencia del Algoritmo ACO'); plt.grid(True)
-        plot_dir = "/app/plots"; os.makedirs(plot_dir, exist_ok=True)
-        try: plt.savefig(os.path.join(plot_dir, "convergencia_aco.png")); print(f"Gráfico guardado en {os.path.join(plot_dir, 'convergencia_aco.png')}")
-        except Exception as e: print(f"Error guardando gráfico: {e}")
-        plt.close() # Cerrar la figura para liberar memoria
+        plt.xlabel('Iteración')
+        plt.ylabel('Mejor Costo Encontrado')
+        plt.title('Convergencia del Algoritmo ACO')
+        plt.grid(True)
+
+        if not os.path.isdir(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+
+        try:
+            plt.savefig(os.path.join(output_dir, "convergencia_aco.png"))
+            print(f"Gráfico guardado en {os.path.join(output_dir, 'convergencia_aco.png')}")
+        except Exception as e:
+            print(f"Error guardando gráfico: {e}")
+        plt.close()

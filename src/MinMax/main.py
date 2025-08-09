@@ -2,7 +2,7 @@ from MinMax.MinMaxAco import MinMaxACO
 from MinMax.MinMaxGraph import MinMaxGraph 
 from utils.generate_graph_components import generar_nodos, generar_aristas, construir_mapeo_paciente_info
 from utils.plot_gantt_solution import plot_gantt_chart
-
+import random
 import json
 import os
 from collections import defaultdict
@@ -113,11 +113,14 @@ def generar_horas_disponibles(hora_inicio_str: str, hora_fin_str: str, intervalo
 
 if __name__ == "__main__":
     # Especificar la ruta al config.json de MinMax
-    config_file_path_minmax = '/app/src/MinMax/config.json'
-    aco_params_path = '/app/src/MinMax/params_config.json'
-    config_file_path = '/app/src/MinMax/config.json'
-    config_data = get_configuration(config_file_path_minmax)
+    config_file_path = os.environ.get('ACO_CONFIG_PATH', 'src/MinMax/config.json')
+    aco_params_path = os.environ.get('ACO_PARAMS_PATH', 'src/MinMax/params_config.json')
+    plot_dir_path = os.environ.get('PLOT_DIR_PATH', 'plots/')
+    gantt_filename = os.environ.get('GANTT_FILENAME', 'schedule_standard_MinMax.png')
+    gantt_filepath = os.path.join(plot_dir_path, gantt_filename)
+    config_data = get_configuration(config_file_path)
     aco_params = get_aco_params(aco_params_path)
+    random.seed(777) # Para reproducibilidad de los resultados
 
     if config_data is None:
         print("No se pudo cargar la configuración para MinMax.")
@@ -196,9 +199,8 @@ if __name__ == "__main__":
     
     print("Ejecutando MinMaxACO...")
     best_solution, best_cost = aco_minmax.run()
-    aco_minmax.plot_convergence() # Llama al método de convergencia de MinMaxACO
-    
-    
+    aco_minmax.plot_convergence(output_dir=plot_dir_path) # Llama al método de convergencia de MinMaxACO
+
     if best_solution:
         asignaciones_por_paciente = defaultdict(list)
         for asignacion_tuple in best_solution: # Agrupa asignaciones por paciente
@@ -252,16 +254,12 @@ if __name__ == "__main__":
                 
                 plot_start_hour_config = datetime.strptime(config_data['hora_inicio'], "%H:%M").hour
                 plot_end_hour_config = datetime.strptime(config_data['hora_fin'], "%H:%M").hour
-
-                plot_output_dir = "/app/plots/"
-                os.makedirs(plot_output_dir, exist_ok=True)
-                combined_plot_filepath = os.path.join(plot_output_dir, "schedule_MinMax_ACO.png")
                 
                 plot_gantt_chart(
                     best_solution=best_solution, 
                     fases_duration_map=fases_duration_para_plot,
                     map_paciente_info=map_paciente_info, 
-                    output_filepath=combined_plot_filepath,
+                    output_filepath=gantt_filepath,
                     num_dias_planificacion=num_dias_planificacion,
                     configured_start_hour=plot_start_hour_config,
                     configured_end_hour=plot_end_hour_config 

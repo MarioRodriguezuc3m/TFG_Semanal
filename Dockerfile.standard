@@ -12,5 +12,8 @@ VOLUME /app/plots
 COPY src/ ./src/
 
 ENV PYTHONPATH=/app/src
+ENV ACO_CONFIG_PATH=/app/src/Standard/config.json
+ENV ACO_PARAMS_PATH=/app/src/Standard/params_config.json
+ENV PLOT_DIR_PATH=/app/plots
 
 CMD ["pypy3", "-m", "Standard.main"]

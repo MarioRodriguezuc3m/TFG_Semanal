@@ -5,6 +5,7 @@ from utils.plot_gantt_solution import plot_gantt_chart
 
 import json
 import os
+import random
 from collections import defaultdict
 from datetime import datetime, timedelta, time
 from typing import List
@@ -109,8 +110,12 @@ def generar_horas_disponibles(hora_inicio_str: str, hora_fin_str: str, intervalo
     return horas
 
 if __name__ == "__main__":
-    config_file_path = '/app/src/Standard/config.json'
-    aco_params_path = '/app/src/Standard/params_config.json'
+    config_file_path = os.environ.get('ACO_CONFIG_PATH', 'src/Standard/config.json')
+    aco_params_path = os.environ.get('ACO_PARAMS_PATH', 'src/Standard/params_config.json')
+    plot_dir_path = os.environ.get('PLOT_DIR_PATH', 'plots/')
+    gantt_filename = os.environ.get('GANTT_FILENAME', 'schedule_standard_ACO.png')
+    gantt_filepath = os.path.join(plot_dir_path, gantt_filename)
+    random.seed(777) # Para reproducibilidad de los resultados
     config_data = get_configuration(config_file_path)
     aco_params = get_aco_params(aco_params_path)
     if config_data is None:
@@ -187,9 +192,8 @@ if __name__ == "__main__":
     
     print("Ejecutando ACO...")
     best_solution, best_cost = aco.run()
-    aco.plot_convergence()
-    
-    
+    aco.plot_convergence(output_dir=plot_dir_path)
+
     if best_solution:
         # Agrupar asignaciones por paciente
         asignaciones_por_paciente = defaultdict(list)
@@ -242,16 +246,12 @@ if __name__ == "__main__":
                 
                 plot_start_hour_config = datetime.strptime(config_data['hora_inicio'], "%H:%M").hour
                 plot_end_hour_config = datetime.strptime(config_data['hora_fin'], "%H:%M").hour
-
-                plot_output_dir = "/app/plots/" 
-                os.makedirs(plot_output_dir, exist_ok=True)
-                combined_plot_filepath = os.path.join(plot_output_dir, "schedule_standard_ACO.png")
                 
                 plot_gantt_chart(
                     best_solution=best_solution, 
                     fases_duration_map=fases_duration_para_plot,
                     map_paciente_info=map_paciente_info, 
-                    output_filepath=combined_plot_filepath,
+                    output_filepath=gantt_filepath,
                     num_dias_planificacion=num_dias_planificacion,
                     configured_start_hour=plot_start_hour_config,
                     configured_end_hour=plot_end_hour_config,

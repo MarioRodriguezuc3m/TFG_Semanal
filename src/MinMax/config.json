@@ -1,9 +1,9 @@
 {
   "tipos_estudio": [
     {
-      "nombre_estudio": "EstudioCardiologico",
+      "nombre_estudio": "Estudio Polio",
       "pacientes": [
-        "P1", "P2", "P3", "P4", "P5"
+        "P1", "P2", "P3", "P4", "P5","P6"
       ],
       "fases": [
         "Admision",
@@ -23,9 +23,9 @@
       }
     },
     {
-      "nombre_estudio": "EstudioNeurologico",
+      "nombre_estudio": "Estudio Moderna",
       "pacientes": [
-        "P1", "P2", "P3", "P4", "P5"
+        "P1", "P2", "P3", "P4", "P5","P6"
       ],
       "fases": [
         "Admision",
@@ -42,9 +42,9 @@
         "Entrega_Resultados": 5
       }
     },{
-      "nombre_estudio": "EstudioDigestivo",
+      "nombre_estudio": "Estudio mRNA",
       "pacientes": [
-        "P1", "P2", "P3", "P4"
+        "P1", "P2", "P3", "P4", "P5","P6"
       ],
       "fases": [
         "Admision",
@@ -61,7 +61,7 @@
     }
   ],
   "consultas": [
-    "ConsultaA", "ConsultaB", "ConsultaC", "ConsultaD", "ConsultaE"
+    "ConsultaA", "ConsultaB", "ConsultaC", "ConsultaD"
   ],
   "hora_inicio": "07:00",
   "hora_fin": "19:00",

@@ -1,6 +1,6 @@
 {
-    "n_ants": 75,
-    "iterations": 100,
+    "n_ants": 50,
+    "iterations": 50,
     "alpha": 1.0,
     "beta": 4.0,
     "rho": 0.02,
