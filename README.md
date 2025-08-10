@@ -1,5 +1,5 @@
 # 🐜 Optimización de Horarios con ACO
-Este proyecto ofrece una implementación del algoritmo de **Optimización por Colonia de Hormigas (ACO)** en Python, para la planificación para múltiples días de citas en un centro que realiza estudios clínicos, inspirado en la logística de CEVAXIN. Se incluyen dos variantes del algoritmo: la versión **Estándar** y la versión **Min-Max**. 
+Este proyecto ofrece una implementación del algoritmo de **Optimización por Colonia de Hormigas (ACO)** en Python para la planificación de citas multidiaria en un centro que realiza estudios clínicos, inspirado en la logística de CEVAXIN. Se incluyen dos variantes del algoritmo: la versión **Estándar** y la versión **Min-Max**. 
 La aplicación está diseñada para ser ejecutada tanto en un entorno de Python local o a través de la contenedores de Docker basados en una imagen de Pypy, con el objetivo de mejorar el tiempod de ejecución del programa.
 A continuación se detalla como ejecutar el programa siguiendo ambos enfoques:
 
