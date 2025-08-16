@@ -203,33 +203,35 @@ if __name__ == "__main__":
 
         intervalo_global_min = config_data['intervalo_consultas_minutos']
 
-        for paciente_id in sorted(asignaciones_por_paciente.keys()):
-            asignaciones_paciente = asignaciones_por_paciente[paciente_id]
-            print(f"\nPaciente: {paciente_id}")
-            
-            info_estudio_paciente = aco.paciente_to_estudio.get(paciente_id)
-            if info_estudio_paciente:
-                print(f"  Estudio: {info_estudio_paciente['nombre_estudio']}")
-                
-                # Ordenar fases según el orden del estudio y luego por día y hora
-                asignaciones_ordenadas = sorted(
-                    asignaciones_paciente,
-                    key=lambda asign_tuple: (
-                        info_estudio_paciente['orden_fases'].get(asign_tuple[5], float('inf')),
-                        asign_tuple[2], # dia_idx
-                        datetime.strptime(asign_tuple[3], "%H:%M").time() # hora_str
-                    )
-                )
-                
-                for asign_tuple_ordenada in asignaciones_ordenadas:
-                    # Nodo: (paciente, consulta, dia_idx, hora_str, personal_instancia, fase_nombre)
-                    _, consulta, dia_idx, hora_str, personal_asignado, fase = asign_tuple_ordenada
-                    orden = info_estudio_paciente['orden_fases'].get(fase, "N/A")
-                    duracion = intervalo_global_min
-                    print(f"  Día {dia_idx+1}, Fase {orden}. {fase} - {hora_str} ({duracion}min) - {consulta} - {personal_asignado}")
-            else:
-                print(f"  Información de estudio no encontrada")
+        # Abrir archivo para escritura
+        planificacion_path = os.path.join(plot_dir_path, "schedule.txt")
+        with open(planificacion_path, "w", encoding="utf-8") as f:
+            for paciente_id in sorted(asignaciones_por_paciente.keys()):
+                asignaciones_paciente = asignaciones_por_paciente[paciente_id]
+                f.write(f"\nPaciente: {paciente_id}\n")
 
+                info_estudio_paciente = aco.paciente_to_estudio.get(paciente_id)
+                if info_estudio_paciente:
+                    f.write(f"  Estudio: {info_estudio_paciente['nombre_estudio']}\n")
+
+                    # Ordenar fases según el orden del estudio y luego por día y hora
+                    asignaciones_ordenadas = sorted(
+                        asignaciones_paciente,
+                        key=lambda asign_tuple: (
+                            info_estudio_paciente['orden_fases'].get(asign_tuple[5], float('inf')),
+                            asign_tuple[2],  # dia_idx
+                            datetime.strptime(asign_tuple[3], "%H:%M").time()
+                        )
+                    )
+
+                    for asign_tuple_ordenada in asignaciones_ordenadas:
+                        # Nodo: (paciente, consulta, dia_idx, hora_str, personal_asignado, fase)
+                        _, consulta, dia_idx, hora_str, personal_asignado, fase = asign_tuple_ordenada
+                        orden = info_estudio_paciente['orden_fases'].get(fase, "N/A")
+                        duracion = intervalo_global_min
+                        f.write(f"  Día {dia_idx+1}, Fase {orden}. {fase} - {hora_str} ({duracion}min) - {consulta} - {personal_asignado}\n")
+                else:
+                    f.write(f"  Información de estudio no encontrada para {paciente_id}\n")
         print(f"\nCosto total: {best_cost:.2f}")
         if aco.execution_time is not None: print(f"Tiempo de ejecución: {aco.execution_time:.2f}s")
 

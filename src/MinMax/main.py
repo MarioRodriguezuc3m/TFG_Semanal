@@ -209,33 +209,35 @@ if __name__ == "__main__":
         
         intervalo_global_min = config_data['intervalo_consultas_minutos']
 
-        print("\n--- Mejor Solución Encontrada (MinMaxACO) ---")
-        for paciente_id in sorted(asignaciones_por_paciente.keys()):
-            asignaciones_paciente = asignaciones_por_paciente[paciente_id]
-            print(f"Paciente: {paciente_id}")
-            
-            info_estudio_paciente = aco_minmax.paciente_to_estudio.get(paciente_id)
-            if info_estudio_paciente:
-                print(f"  Estudio: {info_estudio_paciente['nombre_estudio']}")
-                
-                # Ordena asignaciones por orden de fase, día y hora
-                asignaciones_ordenadas = sorted(
-                    asignaciones_paciente, 
-                    key=lambda asign_tuple: (
-                        info_estudio_paciente['orden_fases'].get(asign_tuple[5], float('inf')),
-                        asign_tuple[2],
-                        datetime.strptime(asign_tuple[3], "%H:%M").time()
+        # Abrir archivo para escritura
+        planificacion_path = os.path.join(plot_dir_path, "schedule_minmax.txt")
+        with open(planificacion_path, "w", encoding="utf-8") as f:
+            for paciente_id in sorted(asignaciones_por_paciente.keys()):
+                asignaciones_paciente = asignaciones_por_paciente[paciente_id]
+                f.write(f"\nPaciente: {paciente_id}\n")
+
+                info_estudio_paciente = aco_minmax.paciente_to_estudio.get(paciente_id)
+                if info_estudio_paciente:
+                    f.write(f"  Estudio: {info_estudio_paciente['nombre_estudio']}\n")
+
+                    # Ordenar fases según el orden del estudio y luego por día y hora
+                    asignaciones_ordenadas = sorted(
+                        asignaciones_paciente,
+                        key=lambda asign_tuple: (
+                            info_estudio_paciente['orden_fases'].get(asign_tuple[5], float('inf')),
+                            asign_tuple[2],  # dia_idx
+                            datetime.strptime(asign_tuple[3], "%H:%M").time()
+                        )
                     )
-                )
-                
-                for asign_tuple_ordenada in asignaciones_ordenadas:
-                    _, consulta, dia_idx, hora_str, medico, fase = asign_tuple_ordenada
-                    orden = info_estudio_paciente['orden_fases'].get(fase, "N/A")
-                    duracion = intervalo_global_min 
-                    print(f"  Día {dia_idx + 1}, Fase {orden}. {fase} - {hora_str} ({duracion}min) - Consulta: {consulta} - Médico: {medico}")
-            else:
-                # Si no se encuentra información del estudio para el paciente
-                print(f"  Advertencia: Información de estudio no encontrada para el paciente {paciente_id} en aco_minmax.paciente_to_estudio.")
+
+                    for asign_tuple_ordenada in asignaciones_ordenadas:
+                        # Nodo: (paciente, consulta, dia_idx, hora_str, personal_asignado, fase)
+                        _, consulta, dia_idx, hora_str, personal_asignado, fase = asign_tuple_ordenada
+                        orden = info_estudio_paciente['orden_fases'].get(fase, "N/A")
+                        duracion = intervalo_global_min
+                        f.write(f"  Día {dia_idx+1}, Fase {orden}. {fase} - {hora_str} ({duracion}min) - {consulta} - {personal_asignado}\n")
+                else:
+                    f.write(f"  Información de estudio no encontrada para {paciente_id}\n")
         
         print(f"\nCosto total de la mejor solución (MinMaxACO): {best_cost:.2f}")
         if aco_minmax.execution_time is not None:
